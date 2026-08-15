@@ -20,7 +20,7 @@ st.set_page_config(
 
 
 load_dotenv()
-SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT")
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT") or "You are Astra, a helpful, honest AI assistant."
 
 
 class ChatState(TypedDict):
@@ -31,7 +31,7 @@ class ChatState(TypedDict):
 def build_chatbot():
 
     model = ChatGroq(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         api_key=os.getenv("groq_key"),
         temperature=0.7,
     )
@@ -52,6 +52,24 @@ def build_chatbot():
 
 
 chatbot = build_chatbot()
+
+
+def load_thread_history(thread_id: str):
+
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        state = chatbot.get_state(config)
+    except Exception:
+        return []
+
+    messages = state.values.get("messages", []) if state and state.values else []
+    history = []
+    for m in messages:
+        role = "user" if isinstance(m, HumanMessage) else "assistant"
+        if isinstance(m, SystemMessage):
+            continue
+        history.append({"role": role, "content": m.content})
+    return history
 
 
 def stream_chat(user_message: str, thread_id: str):
@@ -197,11 +215,24 @@ st.markdown(
 )
 
 
+
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())[:8]
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+
+if "chat_thread" not in st.session_state:
+    st.session_state.chat_thread = []
+
+
+def add_thread(thread_id):
+
+    if thread_id not in st.session_state.chat_thread:
+        st.session_state.chat_thread.append(thread_id)
+
+
+add_thread(st.session_state.thread_id)
 
 
 with st.sidebar:
@@ -213,18 +244,28 @@ with st.sidebar:
     if st.button("🆕  New Chat", use_container_width=True):
         st.session_state.thread_id = str(uuid.uuid4())[:8]
         st.session_state.chat_history = []
+        add_thread(st.session_state.thread_id)
         st.rerun()
 
     if st.button("🗑️  Clear Conversation", use_container_width=True):
         st.session_state.chat_history = []
         st.rerun()
 
-    st.markdown("---")
-    st.markdown("**Model**")
-    st.caption("llama-3.3-70b-versatile via Groq")
+
+
 
     st.markdown("**Thread**")
     st.markdown(f"<div class='thread-pill'>🧵 {st.session_state.thread_id}</div>", unsafe_allow_html=True)
+
+    if len(st.session_state.chat_thread) > 1:
+        st.markdown("**Previous threads**")
+        for tid in reversed(st.session_state.chat_thread):
+            if tid == st.session_state.thread_id:
+                continue
+            if st.button(f"🧵 {tid}", key=f"switch_{tid}", use_container_width=True):
+                st.session_state.thread_id = tid
+                st.session_state.chat_history = load_thread_history(tid)
+                st.rerun()
 
     st.markdown("---")
     st.caption(f"💬 {len(st.session_state.chat_history)} messages in this session")
@@ -245,7 +286,6 @@ st.markdown(
 
 if not st.session_state.chat_history:
     st.markdown("#### Ask me anything ✨")
-    cols = st.columns(2)
 
 for msg in st.session_state.chat_history:
     avatar = "🧑" if msg["role"] == "user" else "✨"
