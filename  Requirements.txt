@@ -1,6 +1,5 @@
-streamlit
-python-dotenv
-langchain
-langchain-core
-langchain-groq
-langgraph
+streamlit>=1.36
+langgraph>=0.2
+langchain-core>=0.3
+langchain-groq>=0.2
+python-dotenv>=1.0
